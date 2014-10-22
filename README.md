@@ -1,1 +1,1 @@
-New Readme
+Deploying Magento usign Ansible
