@@ -1,0 +1,11 @@
+---
+# file: controller.yml
+- hosts: controllers
+  roles:
+    - common
+    - keystone
+    - glance
+    - nova
+    - neutron
+    - neutron-network
+    - horizon

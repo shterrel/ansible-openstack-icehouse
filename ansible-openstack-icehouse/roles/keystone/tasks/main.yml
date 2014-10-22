@@ -1,0 +1,69 @@
+---
+# file: roles/keystone/tasks/main.yml
+
+- name: install Keystone
+  yum: pkg={{item}} state=installed
+  with_items:
+   - openstack-keystone
+   - python-keystoneclient
+
+- name: Config database
+  command: openstack-config --set /etc/keystone/keystone.conf database connection mysql://keystone:{{ KEYSTONE_DBPASS }}@{{ CONTROLLER }}/keystone
+
+- name: Create MySQL database
+  command: mysql -e "CREATE DATABASE keystone"
+  ignore_errors: yes
+
+- name: Grant 1
+  command: mysql -e "GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY '{{ KEYSTONE_DBPASS }}'"
+
+- name: Grant 2
+  command: mysql -e "GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' IDENTIFIED BY '{{ KEYSTONE_DBPASS }}'"
+
+- name: Grant 3
+  command: mysql -e "GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'{{ CONTROLLER }}' IDENTIFIED BY '{{ KEYSTONE_DBPASS }}'"
+
+- name: Flush Privileges
+  command: mysql -e "FLUSH PRIVILEGES"
+
+- name: Define auth token
+  command: openstack-config --set /etc/keystone/keystone.conf DEFAULT admin_token {{ ADMIN_TOKEN }}
+
+- name: Step 6a
+  command: keystone-manage pki_setup --keystone-user keystone --keystone-group keystone
+
+- name: Step 6b
+  command: chown -R keystone:keystone /etc/keystone/ssl
+
+- name: Step 6c
+  command: chmod -R o-rwx /etc/keystone/ssl
+
+- name: Change ownership of /var/log/keystone
+  command: chown -R keystone:keystone /var/log/keystone
+
+- name: touch files
+  command: touch /var/spool/cron/keystone /var/log/keystone/keystone-tokenflush.log
+
+#- name: Step 8
+#  command: (crontab -l -u keystone 2>&1 | grep -q token_flush) || echo '@hourly /usr/bin/keystone-manage token_flush >/var/log/keystone/keystone-tokenflush.log 2>&1' >> /var/spool/cron/keystone
+
+- name: check for keystone_setup confirmation file
+  command: cat ~/.has_keystone_setup
+  ignore_errors: yes
+  register: keystone_setup_check
+
+- name: Keystone db sync
+  command: su -s /bin/sh -c "keystone-manage db_sync" keystone
+  when: keystone_setup_check|failed
+
+- name: enable Keystone service
+  service: enabled=yes name=openstack-keystone state=started
+
+- name: define keystone user, tenants and roles
+  script: roles/keystone/files/keystone.sh
+  register: keystone_setup
+  when: keystone_setup_check|failed
+
+- name: set keystone_setup confirmation file
+  command: touch ~/.has_keystone_setup
+  when: keystone_setup|success
