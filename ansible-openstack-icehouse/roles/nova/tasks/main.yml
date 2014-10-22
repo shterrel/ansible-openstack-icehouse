@@ -1,0 +1,67 @@
+---
+# file: roles/nova/tasks/main.yml
+
+- name: Install nova packages
+  yum: pkg={{ item }} state=installed
+  with_items:
+   - openstack-nova-api
+   - openstack-nova-cert
+   - openstack-nova-conductor
+   - openstack-nova-console
+   - openstack-nova-novncproxy
+   - openstack-nova-scheduler
+   - python-novaclient
+
+- name: set config options in nova.conf
+  command: "{{ item }}"
+  with_items:
+   - openstack-config --set /etc/nova/nova.conf database connection mysql://nova:{{ NOVA_DBPASS }}@{{ CONTROLLER }}/nova
+   - openstack-config --set /etc/nova/nova.conf DEFAULT rpc_backend qpid
+   - openstack-config --set /etc/nova/nova.conf DEFAULT qpid_hostname {{ CONTROLLER }}
+   - openstack-config --set /etc/nova/nova.conf DEFAULT my_ip {{ MY_IP }}
+   - openstack-config --set /etc/nova/nova.conf DEFAULT vncserver_listen {{ MY_IP }}
+   - openstack-config --set /etc/nova/nova.conf DEFAULT vncserver_proxyclient_address {{ MY_IP }}
+
+- name: create database
+  command: mysql -e "CREATE DATABASE nova"
+  ignore_errors: yes
+
+- name: grant 1
+  command: mysql -e "GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' IDENTIFIED BY '{{ NOVA_DBPASS }}'"
+
+- name: grant 2
+  command: mysql -e "GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'%' IDENTIFIED BY '{{ NOVA_DBPASS }}'"
+
+- name: grant 3
+  command: mysql -e "GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'{{ CONTROLLER }}' IDENTIFIED BY '{{ NOVA_DBPASS }}'"
+
+- name: flugh privs
+  command: mysql -e "FLUSH PRIVILEGES"
+
+- name: check for nova_setup confirmation file
+  command: cat ~/.has_nova_setup
+  ignore_errors: yes
+  register: nova_setup_check
+
+- name: nova db sync
+  command: su -s /bin/sh -c "nova-manage db sync" nova
+  when: nova_setup_check|failed
+
+- name: nova config, service and endpoint set up
+  script: roles/nova/files/nova.sh
+  register: nova_setup
+  when: nova_setup_check|failed
+
+- name: enable nova services
+  service: enabled=yes name={{ item }} state=started
+  with_items:
+   - openstack-nova-api
+   - openstack-nova-cert
+   - openstack-nova-consoleauth
+   - openstack-nova-scheduler
+   - openstack-nova-conductor
+   - openstack-nova-novncproxy
+
+- name: set has_nova_setup confirmation file
+  command: touch ~/.has_nova_setup
+  when: nova_setup|success
