@@ -1,4 +1,0 @@
----
-# file: site.yml
-- include: controller.yml
-- include: compute-node.yml
