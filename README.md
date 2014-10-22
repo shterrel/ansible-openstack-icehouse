@@ -1,1 +1,0 @@
-Deploying Magento usign Ansible
