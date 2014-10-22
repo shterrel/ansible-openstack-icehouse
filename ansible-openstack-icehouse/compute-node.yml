@@ -1,0 +1,7 @@
+---
+# file: compute-node.yml
+- hosts: compute-nodes
+  roles:
+    - common
+    - compute-node
+    - neutron-compute-node
